@@ -1,6 +1,5 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
-
 import { bookTicket, fetchFlightData, fetchSeats } from '../api/flights.js'
 import { prettyDate } from '../utils/format.js'
 
@@ -12,7 +11,6 @@ import PassengerForm from '../components/flights/PassengerForm.vue'
 import ResultsHeader from '../components/flights/ResultsHeader.vue'
 import SearchForm from '../components/flights/SearchForm.vue'
 
-/* ---------- Данные ---------- */
 const airports = ref([])
 const tickets = ref([])
 const loading = ref(true)
@@ -30,7 +28,6 @@ onMounted(async () => {
   }
 })
 
-/* ---------- Фильтры (работают на клиенте) ---------- */
 const form = reactive({ from: '', to: '', date: '' })
 const applied = reactive({ ...form })
 
@@ -48,7 +45,6 @@ const results = computed(() =>
     .sort((a, b) => a.date.localeCompare(b.date) || a.dep.localeCompare(b.dep))
 )
 
-// рейсы, сгруппированные по датам
 const groups = computed(() => {
   const map = new Map()
   for (const t of results.value) {
@@ -62,11 +58,10 @@ const cityOf = (code) => airports.value.find((a) => a.code === code)?.city ?? co
 
 const resultsTitle = computed(() =>
   applied.from && applied.to
-    ? `${cityOf(applied.from)} – ${cityOf(applied.to)}`
+    ? `${cityOf(applied.from)} → ${cityOf(applied.to)}`
     : 'Available flights'
 )
 
-/* ---------- Выбор рейса и покупка ---------- */
 const selectedId = ref(null)
 const submitting = ref(false)
 const bookingError = ref('')
@@ -78,7 +73,6 @@ function select(flight) {
   success.value = ''
 }
 
-// Подтягиваем актуальные места из базы (например, если кто-то купил последние)
 async function refreshSeats() {
   const fresh = await fetchSeats()
   for (const { id, seats } of fresh) {
@@ -92,15 +86,15 @@ async function buy(flight, passenger) {
   success.value = ''
   submitting.value = true
   try {
-    const { seats } = await bookTicket(flight.id) // сервер возвращает оставшиеся места
+    const { seats } = await bookTicket(flight.id, passenger)
     const ticket = tickets.value.find((t) => t.id === flight.id)
-    ticket.seats = seats
+    if (ticket) ticket.seats = seats
 
-    success.value = `Booked a seat on ${flight.number} for ${passenger.first_name.trim()} ${passenger.last_name.trim()}. Confirmation sent to ${passenger.email}.`
+    success.value = `Booked a seat on ${flight.number} for ${passenger.first_name.trim()} ${passenger.last_name.trim()}.`
     selectedId.value = null
   } catch (e) {
     bookingError.value = e.message
-    if (e.status === 409) refreshSeats().catch(() => {})
+    if (e.status === 409) refreshSeats().catch(() => { })
   } finally {
     submitting.value = false
   }
@@ -108,49 +102,33 @@ async function buy(flight, passenger) {
 </script>
 
 <template>
-  <main class="min-h-screen bg-slate-50 px-4 py-8 text-slate-900 transition-colors dark:bg-slate-950 dark:text-slate-100 sm:py-14">
+  <main
+    class="min-h-screen bg-slate-50 px-4 py-8 text-slate-900 transition-colors dark:bg-slate-950 dark:text-slate-100 sm:py-14">
     <div class="mx-auto max-w-4xl">
       <header class="mb-6 px-1">
         <h1 class="text-3xl font-bold tracking-tight sm:text-4xl">Where to next?</h1>
         <p class="mt-2 text-slate-500 dark:text-slate-400">Pick a route and a date to see available flights.</p>
       </header>
 
-      <SearchForm
-        v-model:from="form.from"
-        v-model:to="form.to"
-        v-model:date="form.date"
-        :airports="airports"
-        @search="search"
-      />
+      <SearchForm v-model:from="form.from" v-model:to="form.to" v-model:date="form.date" :airports="airports"
+        @search="search" />
 
       <ResultsHeader :title="resultsTitle" :count="results.length" />
 
-      <AlertMessage v-if="loading">Loading flights…</AlertMessage>
+      <AlertMessage v-if="loading">Loading flights...</AlertMessage>
       <AlertMessage v-if="loadError" variant="error">{{ loadError }}</AlertMessage>
       <AlertMessage v-if="success" variant="success">{{ success }}</AlertMessage>
 
       <FlightGroup v-for="g in groups" :key="g.date" :label="prettyDate(g.date)">
-        <FlightCard
-          v-for="f in g.items"
-          :key="f.id"
-          :flight="f"
-          :selected="selectedId === f.id"
-          @select="select(f)"
-        >
-          <PassengerForm
-            :flight="f"
-            :submitting="submitting"
-            :server-error="bookingError"
-            @submit="buy(f, $event)"
-          />
-        </FlightCard>
+        <div v-for="f in g.items" :key="f.id" class="space-y-3 mb-4">
+          <FlightCard :flight="f" :selected="selectedId === f.id" @select="select(f)" />
+          <PassengerForm v-if="selectedId === f.id" :flight="f" :submitting="submitting" :server-error="bookingError"
+            @submit="buy(f, $event)" />
+        </div>
       </FlightGroup>
 
-      <EmptyState
-        v-if="!loading && !loadError && !results.length"
-        title="No flights match these filters"
-        text="Try another date or choose “Anywhere” for From or To."
-      />
+      <EmptyState v-if="!loading && !loadError && !results.length" title="No flights match these filters"
+        text="Try another date or choose 'Anywhere' for From or To." />
     </div>
   </main>
 </template>
